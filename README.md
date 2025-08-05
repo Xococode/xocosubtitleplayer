@@ -1,8 +1,8 @@
-# Expert Subtitle Player Pro
+# Xoco Subtitle Player Pro
 
 ## Una Experiencia Multimedia Inmersiva y Accesible
 
-Expert Subtitle Player Pro es una aplicación web diseñada para transformar la manera en que consumes contenido multimedia. Su función principal es leer en voz alta los subtítulos de un vídeo en perfecta sincronía, convirtiendo cualquier película, serie o clip en una experiencia accesible y personalizable.
+Xoco Subtitle Player Pro es una aplicación web diseñada para transformar la manera en que consumes contenido multimedia. Su función principal es leer en voz alta los subtítulos de un vídeo en perfecta sincronía, convirtiendo cualquier película, serie o clip en una experiencia accesible y personalizable.
 
 ### Características Principales
 
