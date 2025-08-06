@@ -1,0 +1,1345 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Xoco Subtitle Player Pro (Karaoke Edition)</title>
+  <style>
+    :root {
+      --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      --success-color: #10b981;
+      --error-color: #ef4444;
+      --warning-color: #f59e0b;
+      --dark-bg: #0f172a;
+      --surface-bg: #1e293b;
+      --glass-bg: rgba(30, 41, 59, 0.8);
+      --text-primary: #f8fafc;
+      --text-secondary: #cbd5e1;
+      --border-subtle: rgba(255, 255, 255, 0.1);
+      --shadow-intense: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+      --transition-smooth: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+      --blur-effect: blur(20px);
+      --karaoke-color: #764ba2; /* Default karaoke color */
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--dark-bg);
+      color: var(--text-primary);
+      min-height: 100vh;
+      overflow: hidden;
+      user-select: none;
+    }
+
+    /* --- LAYOUT & PANELS --- */
+    .app-container {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      background: var(--dark-bg);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .video-container, .main-ui-overlay {
+      position: absolute;
+      top:0; left:0;
+      width: 100%;
+      height: 100%;
+      transition: width 0.4s ease, right 0.4s ease, left 0.4s ease;
+    }
+
+    .settings-panel, .playlist-panel {
+      position: absolute;
+      background: var(--glass-bg);
+      backdrop-filter: var(--blur-effect);
+      border: 1px solid var(--border-subtle);
+      transition: var(--transition-smooth);
+      z-index: 500;
+    }
+
+    .settings-panel {
+      top: 2rem;
+      left: 2rem;
+      border-radius: 20px;
+      padding: 1.5rem;
+      max-width: 320px;
+      box-shadow: var(--shadow-intense);
+      transform: translateX(-150%);
+    }
+
+    .playlist-panel {
+      top: 0;
+      right: 0;
+      width: 350px;
+      height: 100%;
+      border-left: 1px solid var(--border-subtle);
+      transform: translateX(100%);
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* --- VISIBILITY STATES --- */
+    .app-container.settings-visible .settings-panel {
+      transform: translateX(0);
+    }
+    
+    .app-container.playlist-visible .playlist-panel {
+      transform: translateX(0);
+    }
+
+    /* Adjust main content when panels are visible */
+    .app-container.playlist-visible .video-container,
+    .app-container.playlist-visible .main-ui-overlay {
+        width: calc(100% - 350px);
+    }
+
+    /* --- FULLSCREEN BEHAVIOR --- */
+    .app-container:fullscreen .settings-panel,
+    .app-container:fullscreen .playlist-panel {
+        transform: translateX(-150%) !important; /* Force hide */
+    }
+    .app-container:fullscreen .playlist-panel {
+        transform: translateX(100%) !important; /* Force hide */
+    }
+    .app-container:fullscreen .video-container,
+    .app-container:fullscreen .main-ui-overlay {
+        width: 100% !important;
+        left: 0 !important;
+        right: 0 !important;
+    }
+
+
+    /* --- CONTROLS & UI --- */
+    .loading-screen {
+      position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+      background: var(--dark-bg); display: flex; flex-direction: column;
+      align-items: center; justify-content: center; z-index: 10000;
+      opacity: 1; transition: var(--transition-smooth);
+    }
+    .loading-screen.hidden { opacity: 0; pointer-events: none; }
+    .loading-spinner {
+      width: 80px; height: 80px; border: 4px solid var(--border-subtle);
+      border-top: 4px solid transparent; border-radius: 50%;
+      background: var(--primary-gradient); animation: spin 1.2s linear infinite;
+      margin-bottom: 2rem; box-shadow: var(--shadow-intense);
+    }
+    @keyframes spin { 100% { transform: rotate(360deg); } }
+    .loading-text {
+      font-size: 1.5rem; font-weight: 700; background: var(--primary-gradient);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text; margin-bottom: 0.5rem;
+    }
+    .loading-subtitle { color: var(--text-secondary); font-size: 1rem; }
+
+    #video-background {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      object-fit: cover; z-index: 0; filter: brightness(0.5); display: none;
+    }
+
+    .drop-zone {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(102, 126, 234, 0.15); border: 4px dashed rgba(102, 126, 234, 0.8);
+      display: none; align-items: center; justify-content: center;
+      z-index: 9000; backdrop-filter: var(--blur-effect); animation: pulse 2s ease-in-out infinite;
+    }
+    .drop-zone.active { display: flex; }
+    @keyframes pulse { 50% { opacity: 1; } }
+    .drop-content {
+      text-align: center; padding: 3rem; background: var(--glass-bg);
+      border-radius: 24px; backdrop-filter: var(--blur-effect); box-shadow: var(--shadow-intense);
+    }
+    .drop-icon { font-size: 4rem; margin-bottom: 1rem; }
+    .drop-text { font-size: 2rem; font-weight: 700; color: #667eea; margin-bottom: 0.5rem; }
+    .drop-subtext { color: var(--text-secondary); }
+
+    .upload-panel {
+      position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      background: var(--glass-bg); border: 1px solid var(--border-subtle);
+      border-radius: 32px; padding: 3rem 2.5rem; text-align: center;
+      backdrop-filter: var(--blur-effect); box-shadow: var(--shadow-intense);
+      transition: var(--transition-smooth); z-index: 1000; max-width: 650px; width: 90%;
+    }
+    .upload-panel.hidden { opacity: 0; transform: translate(-50%, -50%) scale(0.8); pointer-events: none; }
+    .app-title {
+      font-size: 2.8rem; font-weight: 900; background: var(--primary-gradient);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text; margin-bottom: 1rem; text-align: center;
+    }
+    .app-subtitle { color: var(--text-secondary); font-size: 1.1rem; margin-bottom: 2.5rem; line-height: 1.6; }
+    .file-upload-area { display: grid; grid-template-columns: 1fr; gap: 1.5rem; margin-bottom: 2.5rem; }
+    @media (min-width: 600px) { .file-upload-area { grid-template-columns: 1fr 1fr; } .folder-upload-group { grid-column: 1 / -1; } }
+    .file-input-group { position: relative; overflow: hidden; border-radius: 20px; transition: var(--transition-smooth); }
+    .file-input { position: absolute; opacity: 0; width: 100%; height: 100%; cursor: pointer; }
+    .file-input-label {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 0.8rem; padding: 1.8rem 1.5rem; background: var(--primary-gradient); color: white;
+      border-radius: 20px; cursor: pointer; font-weight: 700; font-size: 1.1rem;
+      transition: var(--transition-smooth); box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);
+    }
+    .file-input-label:hover { transform: scale(1.02); box-shadow: 0 15px 40px rgba(102, 126, 234, 0.5); }
+    .file-icon { font-size: 2.2rem; }
+
+    .status-dashboard { background: rgba(0, 0, 0, 0.4); border-radius: 20px; padding: 1.5rem; border: 1px solid var(--border-subtle); }
+    .status-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1.5rem; }
+    .status-card {
+      display: flex; align-items: center; gap: 1rem; padding: 1rem;
+      background: rgba(255, 255, 255, 0.05); border-radius: 12px;
+      border: 1px solid var(--border-subtle); transition: var(--transition-smooth);
+    }
+    .status-indicator {
+      width: 35px; height: 35px; border-radius: 50%; display: flex; align-items: center;
+      justify-content: center; font-size: 1.1rem; font-weight: bold; transition: var(--transition-smooth); flex-shrink: 0;
+    }
+    .status-indicator.pending { background: var(--warning-color); }
+    .status-indicator.success { background: var(--success-color); }
+    .status-indicator.error { background: var(--error-color); }
+    .status-info { text-align: left; overflow: hidden; }
+    .status-title { font-weight: 600; margin-bottom: 0.25rem; }
+    .status-description { font-size: 0.85rem; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    
+    .video-player { width: 100%; height: 100%; object-fit: contain; }
+    .video-placeholder {
+      display: none; flex-direction: column; align-items: center; justify-content: center;
+      text-align: center; color: var(--text-secondary); z-index: 5; position: absolute;
+      top: 50%; left: 50%; transform: translate(-50%, -50%); width: 90%; max-width: 500px;
+    }
+    .placeholder-icon { font-size: 5rem; margin-bottom: 1rem; opacity: 0.6; }
+
+    .main-ui-overlay { z-index: 100; pointer-events: none; }
+    .main-ui-overlay > * { pointer-events: auto; }
+    .subtitle-overlay { position: absolute; bottom: 12%; left: 5%; right: 5%; text-align: center; transition: var(--transition-smooth); }
+    .subtitle-text {
+      display: inline-block; background: rgba(0, 0, 0, 0.85); color: white; padding: 1rem 2rem;
+      border-radius: 16px; font-size: clamp(1.2rem, 3vw, 2.2rem); line-height: 1.5; font-weight: 600;
+      text-shadow: 2px 2px 8px rgba(0, 0, 0, 0.8); border: 1px solid rgba(255, 255, 255, 0.15);
+      box-shadow: 0 15px 50px rgba(0, 0, 0, 0.8); opacity: 0; transform: translateY(20px);
+      transition: opacity 0.3s ease, transform 0.3s ease;
+    }
+    .subtitle-text.active { opacity: 1; transform: translateY(0); }
+    .subtitle-word { transition: color 0.2s ease, transform 0.2s ease; display: inline-block; }
+    .subtitle-word.highlight {
+      transform: scale(1.05);
+      color: var(--karaoke-color);
+    }
+
+    .controls-overlay {
+      position: absolute; bottom: 3rem; left: 50%; transform: translateX(-50%);
+      display: flex; gap: 1rem; align-items: center; opacity: 0;
+      transition: var(--transition-smooth);
+    }
+    .app-container:hover .controls-overlay, .controls-overlay:focus-within { opacity: 1; }
+
+    .control-button {
+      width: 50px; height: 50px; border: none; border-radius: 50%;
+      background: var(--glass-bg); color: white; font-size: 1.2rem; cursor: pointer;
+      transition: var(--transition-smooth); backdrop-filter: var(--blur-effect);
+      border: 1px solid var(--border-subtle); display: flex; align-items: center;
+      justify-content: center; box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
+    }
+    .control-button svg { width: 24px; height: 24px; fill: currentColor; transition: transform 0.2s ease; }
+    .control-button:hover:not(:disabled) { background: var(--primary-gradient); transform: scale(1.1); }
+    .control-button:hover:not(:disabled) svg { transform: scale(1.1); }
+    .control-button.active { background: var(--primary-gradient); }
+    .control-button:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+    .progress-container {
+      position: absolute; bottom: 0; left: 0; width: 100%; height: 6px;
+      background: rgba(255, 255, 255, 0.1); cursor: pointer; --progress-height-hover: 12px;
+      transition: height 0.2s ease;
+    }
+    .progress-container:hover { height: var(--progress-height-hover); }
+    .progress-bar { height: 100%; background: var(--primary-gradient); width: 0%; transition: width 0.1s linear; position: relative; border-radius: 0 3px 3px 0; }
+    .progress-tooltip {
+      position: absolute; bottom: calc(var(--progress-height-hover) + 8px); left: 0;
+      transform: translateX(-50%); background: var(--glass-bg); border: 1px solid var(--border-subtle);
+      color: white; padding: 5px 10px; border-radius: 8px; font-size: 0.9rem; font-weight: 600;
+      opacity: 0; visibility: hidden; transition: opacity 0.2s ease; white-space: nowrap; pointer-events: none; z-index: 10;
+    }
+    .progress-container:hover .progress-tooltip { opacity: 1; visibility: visible; }
+
+    .voice-indicator {
+      position: absolute; top: 2rem; right: 2rem; display: flex; gap: 5px;
+      align-items: flex-end; opacity: 0; transition: var(--transition-smooth);
+    }
+    .voice-indicator.active { opacity: 1; }
+    .voice-bar { width: 4px; background: var(--primary-gradient); border-radius: 2px; animation: voice-wave 0.8s ease-in-out infinite alternate; }
+    .voice-bar:nth-child(1) { height: 20px; animation-delay: 0s; }
+    .voice-bar:nth-child(2) { height: 30px; animation-delay: 0.1s; }
+    .voice-bar:nth-child(3) { height: 25px; animation-delay: 0.2s; }
+    .voice-bar:nth-child(4) { height: 35px; animation-delay: 0.3s; }
+    .voice-bar:nth-child(5) { height: 15px; animation-delay: 0.4s; }
+    @keyframes voice-wave { 100% { transform: scaleY(1); opacity: 1; } 0% { transform: scaleY(0.2); opacity: 0.5; } }
+
+    .settings-title { font-size: 1.2rem; font-weight: 700; margin-bottom: 1.5rem; color: var(--text-primary); }
+    .setting-item { margin-bottom: 1.2rem; }
+    .setting-item:last-child { margin-bottom: 0; }
+    .setting-item.hidden-setting { display: none; }
+    .setting-label { display: block; font-size: 0.9rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 0.75rem; }
+    .setting-input { width: 100%; padding: 0.7rem 1rem; background: rgba(0, 0, 0, 0.4); border: 1px solid var(--border-subtle); border-radius: 10px; color: var(--text-primary); font-size: 0.9rem; transition: var(--transition-smooth); }
+    input[type="color"].setting-input { padding: 0.3rem; height: 40px; }
+    .setting-range { -webkit-appearance: none; appearance: none; height: 6px; background: rgba(255, 255, 255, 0.2); border-radius: 3px; outline: none; padding: 0; }
+    .setting-range::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 18px; height: 18px; background: var(--primary-gradient); border-radius: 50%; cursor: pointer; }
+    .setting-range::-moz-range-thumb { width: 18px; height: 18px; background: var(--primary-gradient); border-radius: 50%; cursor: pointer; border: none; }
+    .toggle-switch-container { display: flex; justify-content: space-between; align-items: center; }
+    .toggle-switch-container .setting-label { margin-bottom: 0; }
+    .setting-toggle { opacity: 0; width: 0; height: 0; }
+    .toggle-switch { position: relative; display: inline-block; width: 50px; height: 28px; flex-shrink: 0; }
+    .toggle-switch-slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(0,0,0,0.4); transition: .4s; border-radius: 28px; }
+    .toggle-switch-slider:before { position: absolute; content: ""; height: 20px; width: 20px; left: 4px; bottom: 4px; background-color: white; transition: .4s; border-radius: 50%; }
+    .setting-toggle:checked + .toggle-switch-slider { background: var(--primary-gradient); }
+    .setting-toggle:disabled + .toggle-switch-slider { opacity: 0.5; cursor: not-allowed; }
+    .setting-toggle:checked + .toggle-switch-slider:before { transform: translateX(22px); }
+
+    .notification {
+      position: fixed; top: 2rem; right: 2rem; background: var(--glass-bg); border: 1px solid var(--border-subtle);
+      border-radius: 16px; padding: 1rem 1.5rem; backdrop-filter: var(--blur-effect); box-shadow: var(--shadow-intense);
+      z-index: 10000; transform: translateX(calc(100% + 2rem)); transition: var(--transition-smooth); min-width: 320px;
+    }
+    .notification.show { transform: translateX(0); }
+    .notification.success { border-left: 4px solid var(--success-color); }
+    .notification.error { border-left: 4px solid var(--error-color); }
+    .notification.warning { border-left: 4px solid var(--warning-color); }
+    .notification-content { display: flex; align-items: center; gap: 1rem; }
+    .notification-icon { font-size: 1.8rem; }
+    .notification-title { font-weight: 700; margin-bottom: 0.25rem; color: var(--text-primary); }
+    .notification-message { font-size: 0.95rem; color: var(--text-secondary); }
+
+    .playlist-title { font-size: 1.2rem; font-weight: 700; padding: 1.5rem; color: var(--text-primary); flex-shrink: 0; border-bottom: 1px solid var(--border-subtle); }
+    .playlist-list { list-style: none; overflow-y: auto; flex-grow: 1; }
+    .playlist-item { padding: 1rem 1.5rem; cursor: pointer; border-bottom: 1px solid var(--border-subtle); transition: background 0.2s ease; font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .playlist-item:hover { background: rgba(255, 255, 255, 0.05); }
+    .playlist-item.active { background: var(--primary-gradient); font-weight: 700; color: white; }
+    .playlist-item.active::before { content: '▶ '; }
+    
+    @media (max-width: 1200px) {
+        .playlist-panel { width: 300px; }
+        .app-container.playlist-visible .video-container,
+        .app-container.playlist-visible .main-ui-overlay { width: calc(100% - 300px); }
+    }
+    
+    @media (max-width: 768px) {
+      .upload-panel { padding: 2rem 1.5rem; }
+      .app-title { font-size: 2.2rem; }
+      .file-upload-area { grid-template-columns: 1fr; gap: 1rem; }
+      .status-grid { grid-template-columns: 1fr; gap: 1rem; }
+      .main-ui-overlay, .app-container:hover .controls-overlay { opacity: 1; }
+      .controls-overlay { bottom: 1.5rem; }
+      .subtitle-overlay { bottom: 22%; }
+      .subtitle-text { padding: 0.8rem 1.2rem; font-size: clamp(1rem, 4vw, 1.5rem); }
+
+      .settings-panel {
+          top: auto; bottom: 8rem; left: 1rem; right: 1rem; max-width: none;
+          width: calc(100% - 2rem); transform: translateY(150%);
+      }
+      .app-container.settings-visible .settings-panel {
+          transform: translateY(0);
+      }
+      .playlist-panel {
+          width: 100%; height: 40%; bottom: 0; top: auto;
+          transform: translateY(100%); border-top: 1px solid var(--border-subtle); border-left: none;
+      }
+       .app-container.playlist-visible .video-container,
+       .app-container.playlist-visible .main-ui-overlay {
+           width: 100%;
+       }
+    }
+  </style>
+</head>
+<body>
+  <div class="loading-screen" id="loadingScreen">
+    <div class="loading-spinner"></div>
+    <div class="loading-text">Xoco Subtitle Player</div>
+    <div class="loading-subtitle">Inicializando sistema avanzado...</div>
+  </div>
+
+  <div class="app-container" id="appContainer">
+    <video id="video-background" muted loop playsinline></video>
+    
+    <div class="drop-zone" id="dropZone">
+      <div class="drop-content">
+        <div class="drop-icon">📁</div>
+        <div class="drop-text">Suelta tus archivos aquí</div>
+        <div class="drop-subtext">Carpeta, Video (.mp4) o Subtítulos (.srt, .vtt)</div>
+      </div>
+    </div>
+
+    <div class="upload-panel" id="uploadPanel">
+      <h1 class="app-title">🎬 Xoco Subtitle Player</h1>
+      <p class="app-subtitle">
+        Sistema profesional de reproducción con narración inteligente y listas de reproducción.
+      </p>
+      
+      <div class="file-upload-area">
+        <div class="file-input-group folder-upload-group">
+          <input type="file" id="folderInput" class="file-input" webkitdirectory directory multiple>
+          <label for="folderInput" class="file-input-label">
+            <div class="file-icon">🗂️</div>
+            <div>Cargar Carpeta de Videos</div>
+          </label>
+        </div>
+        <div class="file-input-group">
+          <input type="file" id="videoInput" class="file-input" accept="video/*">
+          <label for="videoInput" class="file-input-label">
+            <div class="file-icon">🎥</div>
+            <div>Seleccionar Video</div>
+          </label>
+        </div>
+        <div class="file-input-group">
+          <input type="file" id="subtitleInput" class="file-input" accept=".srt,.vtt">
+          <label for="subtitleInput" class="file-input-label">
+            <div class="file-icon">📝</div>
+            <div>Seleccionar Subtítulos</div>
+          </label>
+        </div>
+      </div>
+
+      <div class="status-dashboard">
+        <div class="status-grid">
+          <div class="status-card">
+            <div class="status-indicator pending" id="videoStatusIndicator"></div>
+            <div class="status-info">
+              <div class="status-title">Video</div>
+              <div class="status-description" id="videoStatusText"></div>
+            </div>
+          </div>
+          <div class="status-card">
+            <div class="status-indicator pending" id="subtitleStatusIndicator"></div>
+            <div class="status-info">
+              <div class="status-title">Subtítulos</div>
+              <div class="status-description" id="subtitleStatusText"></div>
+            </div>
+          </div>
+          <div class="status-card">
+            <div class="status-indicator pending" id="systemStatusIndicator"></div>
+            <div class="status-info">
+              <div class="status-title">Sistema</div>
+              <div class="status-description" id="systemStatusText"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="video-container">
+        <div class="video-placeholder" id="videoPlaceholder">
+            <div class="placeholder-icon">🎤</div>
+            <h2 class="app-title" style="font-size: 2.5rem;">Modo Solo Voz</h2>
+            <p class="app-subtitle" style="font-size: 1.1rem; margin-bottom: 0;">Presiona reproducir para iniciar la narración.</p>
+        </div>
+        <video id="videoPlayer" class="video-player" muted playsinline></video>
+    </div>
+    
+    <div class="main-ui-overlay">
+        <div class="subtitle-overlay" id="subtitleOverlay">
+            <div class="subtitle-text" id="subtitleText"></div>
+        </div>
+
+        <div class="controls-overlay">
+            <button class="control-button" id="settingsToggleBtn" disabled title="Configuración"></button>
+            <button class="control-button" id="prevBtn" disabled title="Anterior"></button>
+            <button class="control-button" id="playPauseBtn" disabled></button>
+            <button class="control-button" id="stopBtn" disabled></button>
+            <button class="control-button" id="nextBtn" disabled title="Siguiente"></button>
+            <button class="control-button" id="playlistToggleBtn" disabled title="Lista de Reproducción"></button>
+            <button class="control-button" id="fullscreenBtn" disabled></button>
+        </div>
+
+        <div class="voice-indicator" id="voiceIndicator">
+            <div class="voice-bar"></div><div class="voice-bar"></div><div class="voice-bar"></div><div class="voice-bar"></div><div class="voice-bar"></div>
+        </div>
+
+        <div class="settings-panel" id="settingsPanel">
+            <div class="settings-title">⚙️ Configuración Avanzada</div>
+            <div class="setting-item">
+                <label for="voiceSelect" class="setting-label">Voz del Sistema</label>
+                <select class="setting-input" id="voiceSelect"></select>
+            </div>
+            <div class="setting-item">
+                <label for="voiceRate" class="setting-label">Velocidad de Voz (<span id="voiceRateValue"></span>x)</label>
+                <input type="range" class="setting-input setting-range" id="voiceRate" min="0.5" max="2.5" step="0.1">
+            </div>
+            <div class="setting-item">
+                <label for="voicePitch" class="setting-label">Tono de Voz (<span id="voicePitchValue"></span>)</label>
+                <input type="range" class="setting-input setting-range" id="voicePitch" min="0.5" max="2" step="0.1">
+            </div>
+            <div class="setting-item">
+                <label for="fontSize" class="setting-label">Tamaño Subtítulos (<span id="fontSizeValue"></span>%)</label>
+                <input type="range" class="setting-input setting-range" id="fontSize" min="50" max="200" step="10">
+            </div>
+             <div class="setting-item">
+                <label for="syncOffset" class="setting-label">Ajuste Sincronización (<span id="syncOffsetValue"></span> ms)</label>
+                <input type="range" class="setting-input setting-range" id="syncOffset" min="-1000" max="1000" step="50">
+            </div>
+            <div class="setting-item">
+                <div class="toggle-switch-container">
+                    <label for="showSubtitlesToggle" class="setting-label">Mostrar Subtítulos</label>
+                    <label class="toggle-switch" role="switch" aria-checked="true">
+                        <input type="checkbox" id="showSubtitlesToggle" class="setting-toggle">
+                        <span class="toggle-switch-slider"></span>
+                    </label>
+                </div>
+            </div>
+             <div class="setting-item">
+                 <div class="toggle-switch-container">
+                    <label for="karaokeToggle" class="setting-label">Efecto Karaoke</label>
+                    <label class="toggle-switch" role="switch" aria-checked="false">
+                        <input type="checkbox" id="karaokeToggle" class="setting-toggle">
+                        <span class="toggle-switch-slider"></span>
+                    </label>
+                </div>
+            </div>
+            <div class="setting-item hidden-setting" id="karaokeColorContainer">
+                <label for="karaokeColor" class="setting-label">Color de Resaltado</label>
+                <input type="color" id="karaokeColor" class="setting-input">
+            </div>
+        </div>
+
+        <div class="progress-container" id="progressContainer">
+            <div class="progress-bar" id="progressBar" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+            <div class="progress-tooltip" id="progressTooltip">00:00</div>
+        </div>
+    </div>
+    
+    <div class="playlist-panel" id="playlistPanel">
+        <h3 class="playlist-title">Lista de Reproducción</h3>
+        <ul class="playlist-list" id="playlistList"></ul>
+    </div>
+  </div>
+
+  <script>
+    const CONSTANTS = {
+      ICONS: {
+        PLAY: `<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"></path></svg>`,
+        PAUSE: `<svg viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"></path></svg>`,
+        STOP: `<svg viewBox="0 0 24 24"><path d="M6 6h12v12H6z"></path></svg>`,
+        FULLSCREEN: `<svg viewBox="0 0 24 24"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"></path></svg>`,
+        NEXT: `<svg viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"></path></svg>`,
+        PREV: `<svg viewBox="0 0 24 24"><path d="M18 6l-8.5 6 8.5 6V6zM6 6v12H4V6h2z"></path></svg>`,
+        SETTINGS: `<svg viewBox="0 0 24 24"><path d="M19.43 12.98c.04-.32.07-.64.07-.98s-.03-.66-.07-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.39-.3-.61-.22l-2.49 1c-.52-.4-1.08-.73-1.69-.98l-.38-2.65C14.46 2.18 14.25 2 14 2h-4c-.25 0-.46.18-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1c-.23-.09-.49 0-.61.22l-2 3.46c-.13.22-.07.49.12.64l2.11 1.65c-.04.32-.07.65-.07.98s.03.66.07.98l-2.11 1.65c-.19.15-.24.42-.12.64l2 3.46c.12.22.39.3.61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49-.42l.38-2.65c.61-.25 1.17-.59 1.69-.98l2.49 1c.23.09.49 0 .61-.22l2-3.46c.12-.22.07-.49-.12-.64l-2.11-1.65zM12 15.5c-1.93 0-3.5-1.57-3.5-3.5s1.57-3.5 3.5-3.5 3.5 1.57 3.5 3.5-1.57 3.5-3.5 3.5z"></path></svg>`,
+        PLAYLIST: `<svg viewBox="0 0 24 24"><path d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"></path></svg>`,
+        STATUS_PENDING: '⏳', STATUS_SUCCESS: '✅', STATUS_ERROR: '❌'
+      },
+      TEXT: {
+        VOICES_LOADING: 'Cargando voces...',
+        VIDEO_WAITING: 'Esperando archivo...',
+        SUBTITLE_WAITING: 'Esperando archivo...',
+        SYSTEM_INIT: 'Inicializando...',
+        SYSTEM_READY: 'Sistema listo'
+      },
+      STATUS: { PENDING: 'pending', SUCCESS: 'success', ERROR: 'error' }
+    };
+
+    class ExpertSubtitlePlayer {
+      constructor() {
+        this.dom = {
+          appContainer: document.getElementById('appContainer'),
+          loadingScreen: document.getElementById('loadingScreen'),
+          uploadPanel: document.getElementById('uploadPanel'),
+          videoInput: document.getElementById('videoInput'),
+          subtitleInput: document.getElementById('subtitleInput'),
+          folderInput: document.getElementById('folderInput'),
+          videoPlayer: document.getElementById('videoPlayer'),
+          videoBackground: document.getElementById('video-background'),
+          subtitleOverlay: document.getElementById('subtitleOverlay'),
+          subtitleText: document.getElementById('subtitleText'),
+          playPauseBtn: document.getElementById('playPauseBtn'),
+          stopBtn: document.getElementById('stopBtn'),
+          fullscreenBtn: document.getElementById('fullscreenBtn'),
+          nextBtn: document.getElementById('nextBtn'),
+          prevBtn: document.getElementById('prevBtn'),
+          settingsToggleBtn: document.getElementById('settingsToggleBtn'),
+          playlistToggleBtn: document.getElementById('playlistToggleBtn'),
+          progressBar: document.getElementById('progressBar'),
+          progressContainer: document.getElementById('progressContainer'),
+          progressTooltip: document.getElementById('progressTooltip'),
+          voiceIndicator: document.getElementById('voiceIndicator'),
+          settingsPanel: document.getElementById('settingsPanel'),
+          playlistPanel: document.getElementById('playlistPanel'),
+          playlistList: document.getElementById('playlistList'),
+          voiceSelect: document.getElementById('voiceSelect'),
+          voiceRate: document.getElementById('voiceRate'),
+          voiceRateValue: document.getElementById('voiceRateValue'),
+          voicePitch: document.getElementById('voicePitch'),
+          voicePitchValue: document.getElementById('voicePitchValue'),
+          fontSize: document.getElementById('fontSize'),
+          fontSizeValue: document.getElementById('fontSizeValue'),
+          syncOffset: document.getElementById('syncOffset'),
+          syncOffsetValue: document.getElementById('syncOffsetValue'),
+          videoStatusIndicator: document.getElementById('videoStatusIndicator'),
+          videoStatusText: document.getElementById('videoStatusText'),
+          subtitleStatusIndicator: document.getElementById('subtitleStatusIndicator'),
+          subtitleStatusText: document.getElementById('subtitleStatusText'),
+          systemStatusIndicator: document.getElementById('systemStatusIndicator'),
+          systemStatusText: document.getElementById('systemStatusText'),
+          dropZone: document.getElementById('dropZone'),
+          videoPlaceholder: document.getElementById('videoPlaceholder'),
+          showSubtitlesToggle: document.getElementById('showSubtitlesToggle'),
+          karaokeToggle: document.getElementById('karaokeToggle'),
+          karaokeColor: document.getElementById('karaokeColor'),
+          karaokeColorContainer: document.getElementById('karaokeColorContainer'),
+        };
+
+        this.state = {
+          isReady: false, isPlaying: false, hasVideo: false, hasSubtitles: false,
+          subtitles: [], currentSubtitleIndex: -1, duration: 0, voices: [],
+          settings: {},
+          playlist: [], currentPlaylistIndex: -1, tempVideoFile: null, tempSubtitleFile: null,
+          isSettingsVisible: false, isPlaylistVisible: false,
+          wasPlaylistVisibleOnFullscreen: false, wasSettingsVisibleOnFullscreen: false
+        };
+
+        this.speechSynthesis = window.speechSynthesis;
+        this.animationFrame = null;
+        this.startTime = 0; this.pausedTime = 0;
+        
+        this.settingsConfig = {
+            voiceRate: { el: this.dom.voiceRate, label: this.dom.voiceRateValue, suffix: 'x', type: 'float' },
+            voicePitch: { el: this.dom.voicePitch, label: this.dom.voicePitchValue, type: 'float' },
+            fontSize: { el: this.dom.fontSize, label: this.dom.fontSizeValue, suffix: '%', type: 'int' },
+            syncOffset: { el: this.dom.syncOffset, label: this.dom.syncOffsetValue, suffix: ' ms', type: 'int' },
+            showSubtitles: { el: this.dom.showSubtitlesToggle, type: 'bool' },
+            karaokeHighlight: { el: this.dom.karaokeToggle, type: 'bool' },
+            karaokeColor: { el: this.dom.karaokeColor, type: 'string' },
+            selectedVoiceURI: { el: this.dom.voiceSelect, type: 'string' }
+        };
+        
+        this.init();
+      }
+
+      async init() {
+        this.setButtonIcons();
+        this.resetStatus();
+        
+        this.state.settings = this.loadSettings();
+        this.applySettings();
+        this.bindEvents();
+        
+        try {
+            await this.initSpeechSynthesis();
+            this.updateSystemStatus(CONSTANTS.STATUS.SUCCESS, CONSTANTS.TEXT.SYSTEM_READY);
+            setTimeout(() => this.dom.loadingScreen.classList.add('hidden'), 500);
+        } catch (error) {
+            this.showNotification('Error al iniciar la síntesis de voz.', 'error');
+            this.updateSystemStatus(CONSTANTS.STATUS.ERROR, 'Error de voz');
+        }
+      }
+      
+      setButtonIcons() {
+        this.dom.playPauseBtn.innerHTML = CONSTANTS.ICONS.PLAY;
+        this.dom.playPauseBtn.setAttribute('aria-label', 'Reproducir (Espacio)');
+        this.dom.stopBtn.innerHTML = CONSTANTS.ICONS.STOP;
+        this.dom.stopBtn.setAttribute('aria-label', 'Detener (Escape)');
+        this.dom.fullscreenBtn.innerHTML = CONSTANTS.ICONS.FULLSCREEN;
+        this.dom.fullscreenBtn.setAttribute('aria-label', 'Pantalla completa (F)');
+        this.dom.nextBtn.innerHTML = CONSTANTS.ICONS.NEXT;
+        this.dom.nextBtn.setAttribute('aria-label', 'Siguiente (Shift + Flecha Derecha)');
+        this.dom.prevBtn.innerHTML = CONSTANTS.ICONS.PREV;
+        this.dom.prevBtn.setAttribute('aria-label', 'Anterior (Shift + Flecha Izquierda)');
+        this.dom.settingsToggleBtn.innerHTML = CONSTANTS.ICONS.SETTINGS;
+        this.dom.playlistToggleBtn.innerHTML = CONSTANTS.ICONS.PLAYLIST;
+      }
+
+      async initSpeechSynthesis() {
+        if (!this.speechSynthesis) throw new Error('Síntesis de voz no soportada');
+        return new Promise((resolve) => {
+            const loadVoices = () => {
+                const voices = this.speechSynthesis.getVoices();
+                if (voices.length > 0) {
+                    this.state.voices = voices;
+                    this.populateVoiceList(); resolve();
+                }
+            };
+            this.speechSynthesis.onvoiceschanged = loadVoices;
+            loadVoices(); 
+            setTimeout(() => {
+                if (this.state.voices.length === 0) loadVoices();
+                if (this.state.voices.length > 0) resolve();
+                else { 
+                    this.showNotification("No se pudieron cargar las voces del sistema.", "warning");
+                    resolve();
+                }
+            }, 1000);
+        });
+      }
+
+      bindEvents() {
+        this.dom.videoInput.addEventListener('change', e => this.handleFile(e.target.files[0], 'video'));
+        this.dom.subtitleInput.addEventListener('change', e => this.handleFile(e.target.files[0], 'subtitle'));
+        this.dom.folderInput.addEventListener('change', e => this.handleFolderSelect(e.target.files));
+        
+        this.dom.playPauseBtn.addEventListener('click', () => this.togglePlayPause());
+        this.dom.stopBtn.addEventListener('click', () => this.stop());
+        this.dom.nextBtn.addEventListener('click', () => this.playNext());
+        this.dom.prevBtn.addEventListener('click', () => this.playPrev());
+        this.dom.fullscreenBtn.addEventListener('click', () => this.toggleFullscreen());
+        
+        this.dom.settingsToggleBtn.addEventListener('click', () => {
+          this.state.isSettingsVisible = !this.state.isSettingsVisible;
+          this.updateUIVisibility();
+        });
+        this.dom.playlistToggleBtn.addEventListener('click', () => {
+          this.state.isPlaylistVisible = !this.state.isPlaylistVisible;
+          this.updateUIVisibility();
+        });
+
+        this.dom.videoPlayer.addEventListener('loadeddata', () => this.onVideoLoaded());
+        this.dom.videoPlayer.addEventListener('ended', () => this.playNext(true));
+        
+        this.dom.progressContainer.addEventListener('click', e => this.seek(e));
+        this.dom.progressContainer.addEventListener('mousemove', e => this.updateProgressTooltip(e));
+
+        Object.keys(this.settingsConfig).forEach(key => {
+            const config = this.settingsConfig[key];
+            const eventType = (config.type === 'bool' || config.el.type === 'color') ? 'change' : 'input';
+            config.el.addEventListener(eventType, e => {
+                let value;
+                if(config.type === 'bool') value = e.target.checked;
+                else if(config.type === 'float') value = parseFloat(e.target.value);
+                else if(config.type === 'int') value = parseInt(e.target.value);
+                else value = e.target.value;
+                this.updateSetting(key, value);
+            });
+        });
+        
+        this.dom.syncOffset.addEventListener('dblclick', () => this.updateSetting('syncOffset', 0));
+
+        const dropZone = this.dom.dropZone;
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(evt => document.body.addEventListener(evt, e => { e.preventDefault(); e.stopPropagation(); }));
+        document.body.addEventListener('dragenter', () => dropZone.classList.add('active'));
+        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('active'));
+        dropZone.addEventListener('drop', e => {
+            dropZone.classList.remove('active');
+            this.handleFolderSelect(e.dataTransfer.files);
+        });
+        
+        this.dom.playlistList.addEventListener('click', e => {
+            const item = e.target.closest('.playlist-item');
+            if(item && item.dataset.index) {
+                this.loadPlaylistItem(parseInt(item.dataset.index, 10));
+            }
+        });
+        
+        document.addEventListener('keydown', e => this.handleKeyPress(e));
+        document.addEventListener('fullscreenchange', () => this.handleFullscreenChange());
+      }
+      
+      updateUIVisibility() {
+        this.dom.appContainer.classList.toggle('settings-visible', this.state.isSettingsVisible);
+        this.dom.settingsToggleBtn.classList.toggle('active', this.state.isSettingsVisible);
+        this.dom.appContainer.classList.toggle('playlist-visible', this.state.isPlaylistVisible);
+        this.dom.playlistToggleBtn.classList.toggle('active', this.state.isPlaylistVisible);
+      }
+      
+      handleFullscreenChange() {
+        if (document.fullscreenElement) {
+            this.state.wasPlaylistVisibleOnFullscreen = this.state.isPlaylistVisible;
+            this.state.wasSettingsVisibleOnFullscreen = this.state.isSettingsVisible;
+            this.state.isPlaylistVisible = false;
+            this.state.isSettingsVisible = false;
+        } else {
+            this.state.isPlaylistVisible = this.state.wasPlaylistVisibleOnFullscreen;
+            this.state.isSettingsVisible = this.state.wasSettingsVisibleOnFullscreen;
+        }
+        this.updateUIVisibility();
+      }
+
+      updateProgressTooltip(event) {
+        const duration = this.state.duration;
+        if (!duration || duration <= 0) return;
+        const rect = this.dom.progressContainer.getBoundingClientRect();
+        const percent = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+        const hoverTime = duration * percent / 1000;
+        
+        const formatTime = (seconds) => {
+            const min = Math.floor(seconds / 60);
+            const sec = Math.floor(seconds % 60);
+            return `${min.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
+        };
+        this.dom.progressTooltip.textContent = formatTime(hoverTime);
+        this.dom.progressTooltip.style.left = `${percent * 100}%`;
+      }
+      
+      async handleFolderSelect(files) {
+          this.showNotification("Procesando carpeta...", "success");
+          const videoFiles = new Map();
+          const subtitleFiles = new Map();
+          const videoExtensions = ['mp4', 'webm', 'mov', 'ogg', 'mkv'];
+          const subtitleExtensions = ['srt', 'vtt'];
+
+          for (const file of files) {
+              const nameParts = file.name.split('.');
+              const extension = nameParts.pop().toLowerCase();
+              const baseName = nameParts.join('.');
+              
+              if (videoExtensions.includes(extension)) {
+                  videoFiles.set(baseName, file);
+              } else if (subtitleExtensions.includes(extension)) {
+                  subtitleFiles.set(baseName, file);
+              }
+          }
+
+          const newPlaylist = [];
+          for (const [baseName, videoFile] of videoFiles) {
+              if (subtitleFiles.has(baseName)) {
+                  newPlaylist.push({
+                      name: baseName,
+                      videoFile: videoFile,
+                      subtitleFile: subtitleFiles.get(baseName)
+                  });
+              }
+          }
+
+          if (newPlaylist.length > 0) {
+              this.state.playlist = newPlaylist;
+              this.showNotification(`${newPlaylist.length} video(s) emparejados.`, "success");
+              this.renderPlaylist();
+              this.checkIfReady();
+          } else {
+              this.showNotification("No se encontraron pares de video/subtítulos.", "warning");
+          }
+      }
+      
+      async handleFile(file, type = null) {
+        if (!file) return;
+        let fileType = type;
+        if (!fileType) {
+            const extension = file.name.split('.').pop().toLowerCase();
+            if (['mp4', 'webm', 'mov', 'ogg', 'mkv'].includes(extension)) fileType = 'video';
+            else if (['srt', 'vtt'].includes(extension)) fileType = 'subtitle';
+        }
+
+        if (fileType === 'video') this.state.tempVideoFile = file;
+        if (fileType === 'subtitle') this.state.tempSubtitleFile = file;
+        
+        if(this.state.tempVideoFile && this.state.tempSubtitleFile) {
+            this.state.playlist = [{
+                name: this.state.tempVideoFile.name.split('.').slice(0, -1).join('.'),
+                videoFile: this.state.tempVideoFile,
+                subtitleFile: this.state.tempSubtitleFile
+            }];
+            this.renderPlaylist();
+            this.checkIfReady();
+            this.state.tempVideoFile = null;
+            this.state.tempSubtitleFile = null;
+        } else if (fileType === 'subtitle' && !this.state.tempVideoFile) {
+             this.state.playlist = [{
+                name: file.name.split('.').slice(0, -1).join('.'),
+                videoFile: null,
+                subtitleFile: file
+            }];
+            this.renderPlaylist();
+            this.checkIfReady();
+            this.state.tempSubtitleFile = null;
+        }
+      }
+      
+      renderPlaylist() {
+        this.dom.playlistList.innerHTML = '';
+        this.state.playlist.forEach((item, index) => {
+            const li = document.createElement('li');
+            li.className = 'playlist-item';
+            li.textContent = item.name;
+            li.dataset.index = index;
+            this.dom.playlistList.appendChild(li);
+        });
+      }
+
+      async loadPlaylistItem(index) {
+          if (index < 0 || index >= this.state.playlist.length) {
+             if (this.state.isPlaying) this.stop();
+             return;
+          }
+          
+          this.pause();
+          this.resetCurrentMediaState();
+          
+          this.state.currentPlaylistIndex = index;
+          const currentItem = this.state.playlist[index];
+
+          this.dom.playlistList.querySelectorAll('.playlist-item').forEach((item, i) => {
+              item.classList.toggle('active', i === index);
+          });
+          
+          this.updateSubtitleStatus('pending', 'Procesando...');
+          if (currentItem.subtitleFile) {
+            try {
+              const text = await currentItem.subtitleFile.text();
+              this.state.subtitles = this.parseSubtitles(text);
+              if (this.state.subtitles.length === 0) throw new Error("No se encontraron subtítulos.");
+              this.state.hasSubtitles = true;
+              this.updateSubtitleStatus('success', `${this.state.subtitles.length} líneas`);
+            } catch (error) {
+              this.updateSubtitleStatus('error', 'Error al procesar');
+              this.state.hasSubtitles = false;
+            }
+          } else {
+            this.updateSubtitleStatus('error', 'No encontrado');
+            this.state.hasSubtitles = false;
+          }
+          
+          this.updateVideoStatus('pending', 'Cargando...');
+          if (currentItem.videoFile) {
+            try {
+              const url = URL.createObjectURL(currentItem.videoFile);
+              this.dom.videoPlayer.src = url;
+              this.dom.videoBackground.src = url;
+              this.state.hasVideo = true;
+              this.updateVideoStatus('success', currentItem.name);
+            } catch (error) {
+              this.updateVideoStatus('error', 'Error al cargar');
+              this.state.hasVideo = false;
+            }
+          } else {
+             this.state.hasVideo = false;
+             this.dom.videoPlayer.src = '';
+             this.dom.videoBackground.src = '';
+             this.updateVideoStatus('success', 'Modo solo voz');
+          }
+          
+          this.checkIfReady();
+          this.play();
+      }
+
+      parseSubtitles(content) {
+          content = content.replace(/\r/g, '');
+          let subtitles = [];
+          const srtRegex = /(?:^|\n\n)(\d+)\n((?:\d{2}:)?\d{2}:\d{2}[,.]\d{3}) --> ((?:\d{2}:)?\d{2}:\d{2}[,.]\d{3}).*\n([\s\S]+?)(?=\n\n|\n*$)/g;
+          let match;
+          while ((match = srtRegex.exec(content)) !== null) {
+              subtitles.push({ index: parseInt(match[1]), start: this.parseTime(match[2]), end: this.parseTime(match[3]), text: match[4].replace(/<[^>]+>/g, '').trim() });
+          }
+          if (subtitles.length === 0) {
+              const vttRegex = /(?:^|\n\n)((?:\d{2}:)?\d{2}:\d{2}[,.]\d{3}) --> ((?:\d{2}:)?\d{2}:\d{2}[,.]\d{3}).*\n([\s\S]+?)(?=\n\n|\n*$)/g;
+              let index = 1;
+              while ((match = vttRegex.exec(content)) !== null) {
+                   if (!match[3] || /NOTE|STYLE/.test(content.substring(0, match.index))) continue;
+                  subtitles.push({ index: index++, start: this.parseTime(match[1]), end: this.parseTime(match[2]), text: match[3].replace(/<[^>]+>/g, '').trim() });
+              }
+          }
+          return subtitles;
+      }
+      
+      parseTime(timeStr) {
+        const parts = timeStr.split(':');
+        const h = parts.length > 2 ? parseInt(parts.shift(), 10) : 0;
+        const m = parseInt(parts.shift(), 10);
+        const s = parseFloat(parts.shift().replace(',', '.'));
+        return (h * 3600 + m * 60 + s) * 1000;
+      }
+
+      checkIfReady() {
+          this.state.isReady = this.state.playlist.length > 0;
+          if (this.state.isReady) {
+              [this.dom.playPauseBtn, this.dom.stopBtn, this.dom.settingsToggleBtn, this.dom.playlistToggleBtn].forEach(btn => btn.disabled = false);
+              
+              this.dom.uploadPanel.classList.add('hidden');
+              this.state.isPlaylistVisible = true;
+              this.updateUIVisibility();
+
+              this.dom.nextBtn.disabled = this.state.currentPlaylistIndex >= this.state.playlist.length - 1;
+              this.dom.prevBtn.disabled = this.state.currentPlaylistIndex <= 0;
+              
+              if (this.state.hasVideo) {
+                this.dom.fullscreenBtn.disabled = false;
+                this.dom.videoPlaceholder.style.display = 'none';
+                if (this.dom.videoPlayer.readyState > 0) {
+                     this.dom.videoBackground.style.display = 'block';
+                }
+              } else {
+                  this.dom.videoPlaceholder.style.display = this.state.isReady ? 'flex' : 'none';
+                  this.dom.fullscreenBtn.disabled = true;
+              }
+          }
+      }
+      
+      onVideoLoaded() {
+          this.state.duration = this.dom.videoPlayer.duration * 1000;
+          this.dom.videoBackground.style.display = 'block';
+          this.checkIfReady();
+      }
+
+      togglePlayPause() {
+          if (!this.state.isReady) return;
+          if (this.state.currentPlaylistIndex === -1) {
+              this.loadPlaylistItem(0);
+              return;
+          }
+          this.state.isPlaying ? this.pause() : this.play();
+          this.dom.playPauseBtn.focus();
+      }
+      
+      playNext(fromEnded = false) {
+          if (this.state.currentPlaylistIndex < this.state.playlist.length - 1) {
+              this.loadPlaylistItem(this.state.currentPlaylistIndex + 1);
+          } else if (fromEnded) {
+              this.stop();
+              this.showNotification("Fin de la lista de reproducción.", "success");
+          }
+      }
+      
+      playPrev() {
+          if (this.state.currentPlaylistIndex > 0) {
+              this.loadPlaylistItem(this.state.currentPlaylistIndex - 1);
+          }
+      }
+
+      play() {
+          if (!this.dom.uploadPanel.classList.contains('hidden')) this.dom.uploadPanel.classList.add('hidden');
+          if (!this.state.hasVideo && !this.state.isPlaying) this.startTime = performance.now() - this.pausedTime;
+          
+          this.state.isPlaying = true;
+          if (this.state.hasVideo) this.dom.videoPlayer.play();
+          this.dom.playPauseBtn.innerHTML = CONSTANTS.ICONS.PAUSE;
+          this.dom.playPauseBtn.setAttribute('aria-label', 'Pausar (Espacio)');
+          
+          if (!this.animationFrame) this.animationFrame = requestAnimationFrame(this.onTimeUpdate.bind(this));
+      }
+
+      pause() {
+          this.state.isPlaying = false;
+          if (this.state.hasVideo) this.dom.videoPlayer.pause();
+          else this.pausedTime = performance.now() - this.startTime;
+          
+          this.speechSynthesis.cancel();
+          this.dom.playPauseBtn.innerHTML = CONSTANTS.ICONS.PLAY;
+          this.dom.playPauseBtn.setAttribute('aria-label', 'Reproducir (Espacio)');
+          this.dom.voiceIndicator.classList.remove('active');
+          
+          cancelAnimationFrame(this.animationFrame);
+          this.animationFrame = null;
+      }
+      
+      resetStatus() {
+        this.updateVideoStatus(CONSTANTS.STATUS.PENDING, CONSTANTS.TEXT.VIDEO_WAITING);
+        this.updateSubtitleStatus(CONSTANTS.STATUS.PENDING, CONSTANTS.TEXT.SUBTITLE_WAITING);
+        this.updateSystemStatus(CONSTANTS.STATUS.SUCCESS, CONSTANTS.TEXT.SYSTEM_READY);
+      }
+
+      resetCurrentMediaState() {
+          if (this.state.isPlaying) this.pause();
+          if (this.state.hasVideo) this.dom.videoPlayer.currentTime = 0;
+          this.pausedTime = 0; this.startTime = 0;
+          this.state.currentSubtitleIndex = -1;
+          this.state.hasVideo = false; this.state.hasSubtitles = false; this.state.subtitles = [];
+          this.dom.progressBar.style.width = '0%';
+          this.dom.progressBar.setAttribute('aria-valuenow', '0');
+          this.dom.subtitleText.classList.remove('active');
+          this.dom.subtitleText.innerHTML = '';
+          this.dom.videoBackground.style.display = 'none';
+          this.dom.videoPlaceholder.style.display = 'none';
+      }
+
+      stop() {
+          this.pause();
+          this.resetCurrentMediaState();
+          this.state.playlist = []; this.state.currentPlaylistIndex = -1;
+          
+          this.dom.uploadPanel.classList.remove('hidden');
+          this.state.isPlaylistVisible = false;
+          this.state.isSettingsVisible = false;
+          this.updateUIVisibility();
+          
+          [this.dom.playPauseBtn, this.dom.stopBtn, this.dom.nextBtn, this.dom.prevBtn, this.dom.fullscreenBtn, this.dom.settingsToggleBtn, this.dom.playlistToggleBtn].forEach(btn => btn.disabled = true);
+          this.resetStatus();
+          this.renderPlaylist();
+
+          if (!this.dom.uploadPanel.classList.contains('hidden')) {
+              this.dom.folderInput.focus();
+          }
+      }
+      
+      seek(event) {
+        if (!this.state.isReady) return;
+        const duration = this.state.duration || (this.state.subtitles.length > 0 ? this.state.subtitles[this.state.subtitles.length - 1].end : 0);
+        if (!duration) return;
+        
+        const rect = this.dom.progressContainer.getBoundingClientRect();
+        const percent = (event.clientX - rect.left) / rect.width;
+        const seekTime = duration * percent;
+
+        if (this.state.hasVideo) {
+            this.dom.videoPlayer.currentTime = seekTime / 1000;
+        } else {
+            this.pausedTime = seekTime;
+            if (this.state.isPlaying) this.startTime = performance.now() - this.pausedTime;
+        }
+        this.speechSynthesis.cancel();
+        this.onTimeUpdate();
+      }
+
+      onTimeUpdate() {
+        if (!this.state.isPlaying) return;
+        let currentTime, duration;
+
+        if (this.state.hasVideo) {
+            currentTime = this.dom.videoPlayer.currentTime * 1000;
+            duration = this.dom.videoPlayer.duration * 1000;
+        } else {
+            currentTime = performance.now() - this.startTime;
+            duration = this.state.subtitles.length > 0 ? this.state.subtitles[this.state.subtitles.length - 1].end : 1;
+        }
+        this.state.duration = duration;
+        currentTime += this.state.settings.syncOffset;
+
+        if (duration > 0) {
+          const progressPercent = Math.min(100, (currentTime / duration) * 100);
+          this.dom.progressBar.style.width = `${progressPercent}%`;
+          this.dom.progressBar.setAttribute('aria-valuenow', progressPercent.toFixed(2));
+        }
+        
+        const activeSubtitle = this.state.subtitles.find(sub => currentTime >= sub.start && currentTime <= sub.end);
+        
+        if (this.state.settings.showSubtitles) {
+            if (activeSubtitle) {
+                if (activeSubtitle.index !== this.state.currentSubtitleIndex) this.handleNewSubtitle(activeSubtitle);
+            } else if (this.state.currentSubtitleIndex !== -1) {
+                this.dom.subtitleText.classList.remove('active');
+                this.state.currentSubtitleIndex = -1;
+            }
+        } else {
+            if (activeSubtitle && activeSubtitle.index !== this.state.currentSubtitleIndex) {
+                this.speechSynthesis.cancel();
+                this.speak(activeSubtitle.text);
+                this.state.currentSubtitleIndex = activeSubtitle.index;
+            } else if (!activeSubtitle) {
+                this.state.currentSubtitleIndex = -1;
+            }
+        }
+        
+        if (currentTime >= duration && duration > 1 && !this.state.hasVideo) this.playNext(true);
+        if (this.state.isPlaying) this.animationFrame = requestAnimationFrame(this.onTimeUpdate.bind(this));
+      }
+
+      handleNewSubtitle(subtitle) {
+        this.speechSynthesis.cancel();
+        const text = subtitle.text;
+        
+        let words = [];
+        let wordSpans = [];
+
+        if (this.state.settings.showSubtitles && this.state.settings.karaokeHighlight) {
+            const wordRegex = /[\w']+/g;
+            let match;
+            let html = '';
+            let lastIndex = 0;
+            while((match = wordRegex.exec(text)) !== null) {
+                html += text.slice(lastIndex, match.index);
+                html += `<span class="subtitle-word">${match[0]}</span>`;
+                words.push({ text: match[0], startIndex: match.index });
+                lastIndex = match.index + match[0].length;
+            }
+            html += text.slice(lastIndex);
+            this.dom.subtitleText.innerHTML = html;
+            wordSpans = this.dom.subtitleText.querySelectorAll('.subtitle-word');
+        } else {
+            this.dom.subtitleText.textContent = text;
+        }
+
+        this.dom.subtitleText.classList.add('active');
+        this.state.currentSubtitleIndex = subtitle.index;
+        
+        // Use a tiny timeout to ensure the cancel command is processed before the new speak command
+        setTimeout(() => this.speak(text, words, wordSpans), 50);
+      }
+
+      speak(text, words = [], wordSpans = []) {
+          if (!text || !this.state.isPlaying) return;
+          const utterance = new SpeechSynthesisUtterance(text);
+          const { settings, voices } = this.state;
+          const selectedVoice = voices.find(v => v.voiceURI === settings.selectedVoiceURI);
+          
+          utterance.voice = selectedVoice || voices.find(v => v.lang.startsWith('es')) || voices[0];
+          utterance.rate = settings.voiceRate;
+          utterance.pitch = settings.voicePitch;
+          utterance.onstart = () => this.dom.voiceIndicator.classList.add('active');
+          
+          if (this.state.settings.karaokeHighlight && words.length > 0 && wordSpans.length > 0) {
+              utterance.onboundary = (event) => {
+                  if (event.name !== 'word') return;
+                  let wordIndex = -1;
+                  for (let i = 0; i < words.length; i++) {
+                      if (words[i].startIndex <= event.charIndex) { wordIndex = i; } 
+                      else { break; }
+                  }
+                  if (wordIndex !== -1 && wordSpans[wordIndex]) {
+                      wordSpans.forEach(span => span.classList.remove('highlight'));
+                      wordSpans[wordIndex].classList.add('highlight');
+                  }
+              };
+          }
+
+          utterance.onend = () => {
+              this.dom.voiceIndicator.classList.remove('active');
+              if (wordSpans.length > 0) {
+                wordSpans.forEach(span => span.classList.remove('highlight'));
+              }
+          };
+          this.speechSynthesis.speak(utterance);
+      }
+
+      loadSettings() {
+          try {
+              const saved = localStorage.getItem('expertSubtitlePlayerSettingsV6');
+              const parsed = saved ? JSON.parse(saved) : this.getDefaultSettings();
+              return {...this.getDefaultSettings(), ...parsed};
+          } catch (e) { return this.getDefaultSettings(); }
+      }
+      saveSettings() { localStorage.setItem('expertSubtitlePlayerSettingsV6', JSON.stringify(this.state.settings)); }
+      getDefaultSettings() { 
+          return { 
+              voiceRate: 1.5, voicePitch: 1, fontSize: 100, syncOffset: 0, 
+              selectedVoiceURI: null, showSubtitles: true, karaokeHighlight: false, karaokeColor: '#8A2BE2'
+          }; 
+      }
+      
+      applySettings() {
+        Object.keys(this.settingsConfig).forEach(key => {
+            const config = this.settingsConfig[key];
+            const value = this.state.settings[key];
+            if (config.el) {
+                if (config.type === 'bool') {
+                    config.el.checked = value;
+                    config.el.parentElement.setAttribute('aria-checked', value);
+                } else { config.el.value = value; }
+            }
+            if (config.label) {
+                const suffix = config.suffix || '';
+                const displayValue = config.type === 'float' ? parseFloat(value).toFixed(1) : value;
+                config.label.textContent = `${displayValue}${suffix || ''}`;
+            }
+        });
+        this.dom.subtitleText.style.fontSize = `clamp(${this.state.settings.fontSize * 0.8}%, 3vw, ${this.state.settings.fontSize * 1.2}%)`;
+        this.dom.subtitleOverlay.style.display = this.state.settings.showSubtitles ? '' : 'none';
+        
+        // Karaoke specific settings
+        this.dom.karaokeToggle.disabled = !this.state.settings.showSubtitles;
+        this.dom.karaokeColorContainer.classList.toggle('hidden-setting', !this.state.settings.karaokeHighlight || !this.state.settings.showSubtitles);
+        document.documentElement.style.setProperty('--karaoke-color', this.state.settings.karaokeColor);
+      }
+      
+      updateSetting(key, value) {
+        this.state.settings[key] = value;
+        this.applySettings();
+        this.saveSettings();
+      }
+      
+      populateVoiceList() {
+        this.dom.voiceSelect.innerHTML = `<option value="">${CONSTANTS.TEXT.VOICES_LOADING}</option>`;
+        if(this.state.voices.length === 0) return;
+        const createOptGroup = (label, voices) => {
+            const group = document.createElement('optgroup');
+            group.label = label;
+            voices.forEach(voice => {
+                const opt = document.createElement('option');
+                opt.value = voice.voiceURI; opt.textContent = `${voice.name} (${voice.lang})`;
+                if (this.state.settings.selectedVoiceURI === voice.voiceURI) opt.selected = true;
+                group.appendChild(opt);
+            });
+            return group;
+        };
+        this.dom.voiceSelect.innerHTML = '';
+        const spanishVoices = this.state.voices.filter(v => v.lang.startsWith('es'));
+        if (spanishVoices.length > 0) this.dom.voiceSelect.appendChild(createOptGroup('Voces en Español', spanishVoices));
+        const otherVoices = this.state.voices.filter(v => !v.lang.startsWith('es'));
+        if (otherVoices.length > 0) this.dom.voiceSelect.appendChild(createOptGroup('Otras Voces', otherVoices));
+
+        if (!this.state.settings.selectedVoiceURI || !this.state.voices.find(v => v.voiceURI === this.state.settings.selectedVoiceURI)) {
+            const defaultVoice = spanishVoices.find(v => v.default) || spanishVoices[0] || this.state.voices[0];
+            if (defaultVoice) {
+                this.updateSetting('selectedVoiceURI', defaultVoice.voiceURI);
+                this.dom.voiceSelect.value = defaultVoice.voiceURI;
+            }
+        } else {
+            this.dom.voiceSelect.value = this.state.settings.selectedVoiceURI;
+        }
+      }
+      
+      updateStatus(indicatorEl, textEl, type, message) {
+        const icons = { [CONSTANTS.STATUS.PENDING]: '⏳', [CONSTANTS.STATUS.SUCCESS]: '✅', [CONSTANTS.STATUS.ERROR]: '❌' };
+        indicatorEl.className = `status-indicator ${type}`;
+        indicatorEl.textContent = icons[type];
+        textEl.textContent = message;
+      }
+      updateVideoStatus(t, m) { this.updateStatus(this.dom.videoStatusIndicator, this.dom.videoStatusText, t, m); }
+      updateSubtitleStatus(t, m) { this.updateStatus(this.dom.subtitleStatusIndicator, this.dom.subtitleStatusText, t, m); }
+      updateSystemStatus(t, m) { this.updateStatus(this.dom.systemStatusIndicator, this.dom.systemStatusText, t, m); }
+      
+      showNotification(message, type = 'success') {
+          const icons = { success: '✅', error: '❌', warning: '⚠️' };
+          const titles = { success: 'Éxito', error: 'Error', warning: 'Advertencia' };
+          const notif = document.createElement('div');
+          notif.className = `notification ${type}`;
+          notif.setAttribute('role', 'alert');
+          notif.innerHTML = `<div class="notification-content"><div class="notification-icon">${icons[type]}</div><div><div class="notification-title">${titles[type]}</div><div class="notification-message">${message}</div></div></div>`;
+          document.body.appendChild(notif);
+          setTimeout(() => notif.classList.add('show'), 10);
+          setTimeout(() => {
+              notif.classList.remove('show');
+              notif.addEventListener('transitionend', () => notif.remove());
+          }, 4000);
+      }
+      
+      toggleFullscreen() {
+          if (!document.fullscreenElement) {
+              this.dom.appContainer.requestFullscreen().catch(err => this.showNotification(`No se pudo activar pantalla completa: ${err.message}`, 'error'));
+          } else {
+              document.exitFullscreen();
+          }
+      }
+      
+      handleKeyPress(e) {
+          if (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'SELECT' || e.ctrlKey || e.metaKey) return;
+          switch (e.code) {
+              case 'Space': e.preventDefault(); this.togglePlayPause(); break;
+              case 'KeyF': e.preventDefault(); this.toggleFullscreen(); break;
+              case 'Escape': e.preventDefault(); this.stop(); break;
+              case 'ArrowLeft': 
+                if (e.shiftKey) { e.preventDefault(); this.playPrev(); }
+                else if (this.state.isReady) { e.preventDefault(); this.seekTo(this.getCurrentTime() - 5000); }
+                break;
+              case 'ArrowRight':
+                if (e.shiftKey) { e.preventDefault(); this.playNext(); }
+                else if (this.state.isReady) { e.preventDefault(); this.seekTo(this.getCurrentTime() + 5000); }
+                break;
+          }
+      }
+
+      getCurrentTime() {
+          if (this.state.hasVideo) return this.dom.videoPlayer.currentTime * 1000;
+          if (this.state.isPlaying) return performance.now() - this.startTime;
+          return this.pausedTime;
+      }
+
+      seekTo(timeInMs) {
+          const duration = this.state.duration;
+          if (!duration) return;
+          const newTime = Math.max(0, Math.min(timeInMs, duration));
+          if (this.state.hasVideo) {
+              this.dom.videoPlayer.currentTime = newTime / 1000;
+          } else {
+              this.pausedTime = newTime;
+              if (this.state.isPlaying) this.startTime = performance.now() - this.pausedTime;
+          }
+          this.speechSynthesis.cancel();
+          this.onTimeUpdate();
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      if (!('speechSynthesis' in window) || !('Promise' in window)) {
+        document.body.innerHTML = `<div style="padding:50px;text-align:center;"><h1>Navegador no compatible</h1><p>Tu navegador no soporta las tecnologías necesarias para esta aplicación (SpeechSynthesis, Promises).</p></div>`;
+        return;
+      }
+      window.playerApp = new ExpertSubtitlePlayer();
+    });
+  </script>
+</body>
+</html>
