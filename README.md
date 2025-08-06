@@ -7,6 +7,9 @@ Xoco Subtitle Player Pro es una aplicación web diseñada para transformar la ma
 > ### ✨ ¡Pruébalo ahora mismo! ✨
 >
 > 👉 [**Accede a Xoco Subtitle Player Pro aquí**](https://xococode.github.io/xocosubtitleplayer/XocoSubtitlePlayer.html) 👈
+> 👉 [**Accede a Xoco Subtitle Player Pro New aquí**](https://xococode.github.io/xocosubtitleplayer/ConLIstaReproduccion.html)👈
+
+
 
 ### Características Principales
 
